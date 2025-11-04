@@ -4,6 +4,9 @@ pipeline {
     environment {
         DOCKER_IMAGE = "flask-portfolio"
         CONTAINER_NAME = "flask-portfolio-container"
+        DOCKERHUB_USER = "Sombrata Satpathy"
+        DOCKERHUB_PASS = credentials('dockerhub-credentials')
+        IMAGE_TAG = "latest"
     }
 
     stages {
@@ -16,18 +19,29 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    sh 'docker build -t ${DOCKER_IMAGE} .'
+                    sh 'docker build -t ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${IMAGE_TAG} .'
                 }
             }
         }
 
-        stage('Run Container') {
+        stage('Push to Docker Hub') {
             steps {
                 script {
-                    // Stop and remove old container if running
                     sh '''
-                    docker ps -q --filter "name=${CONTAINER_NAME}" | grep -q . && docker stop ${CONTAINER_NAME} && docker rm ${CONTAINER_NAME} || true
-                    docker run -d -p 5000:5000 --name ${CONTAINER_NAME} ${DOCKER_IMAGE}
+                    echo $DOCKERHUB_PASS | docker login -u $DOCKERHUB_USER --password-stdin
+                    docker push ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${IMAGE_TAG}
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    // Assuming deployment.yaml and service.yaml exist in repo
+                    sh '''
+                    kubectl apply -f deployment.yaml
+                    kubectl apply -f service.yaml
                     '''
                 }
             }
@@ -36,10 +50,10 @@ pipeline {
 
     post {
         success {
-            echo '✅ Deployment successful!'
+            echo '✅ Kubernetes Deployment successful!'
         }
         failure {
-            echo '❌ Build failed!'
+            echo '❌ Build or Deployment failed!'
         }
     }
 }
