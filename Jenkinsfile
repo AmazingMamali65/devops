@@ -4,9 +4,11 @@ pipeline {
     environment {
         DOCKER_IMAGE = "flask-portfolio"
         CONTAINER_NAME = "flask-portfolio-container"
-        DOCKERHUB_USER = "Sombrata Satpathy"
+        DOCKERHUB_USER = "sombratasatpathy"      // ✅ Docker Hub usernames must be lowercase (very important)
         DOCKERHUB_PASS = credentials('dockerhub-credentials')
         IMAGE_TAG = "latest"
+        DEPLOYMENT_FILE = "deployment.yaml"
+        SERVICE_FILE = "service.yaml"
     }
 
     stages {
@@ -38,10 +40,17 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 script {
-                    // Assuming deployment.yaml and service.yaml exist in repo
+                    // ✅ Update deployment image dynamically before applying
                     sh '''
-                    kubectl apply -f deployment.yaml
-                    kubectl apply -f service.yaml
+                    kubectl delete -f ${DEPLOYMENT_FILE} --ignore-not-found
+                    kubectl delete -f ${SERVICE_FILE} --ignore-not-found
+
+                    # Replace image name in deployment
+                    sed -i "s|image:.*|image: ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${IMAGE_TAG}|" ${DEPLOYMENT_FILE}
+
+                    kubectl apply -f ${DEPLOYMENT_FILE}
+                    kubectl apply -f ${SERVICE_FILE}
+                    kubectl rollout status deployment/flask-deployment
                     '''
                 }
             }
@@ -51,6 +60,9 @@ pipeline {
     post {
         success {
             echo '✅ Kubernetes Deployment successful!'
+            script {
+                sh 'kubectl get svc flask-service'
+            }
         }
         failure {
             echo '❌ Build or Deployment failed!'
