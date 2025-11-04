@@ -2,17 +2,14 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = "flask-portfolio"
-        CONTAINER_NAME = "flask-portfolio-container"
-        DOCKERHUB_USER = "sombratasatpathy"      // ✅ Docker Hub usernames must be lowercase (very important)
-        DOCKERHUB_PASS = credentials('dockerhub-credentials')
-        IMAGE_TAG = "latest"
-        DEPLOYMENT_FILE = "deployment.yaml"
-        SERVICE_FILE = "service.yaml"
+        DOCKERHUB_CREDENTIALS = 'dockerhub-credentials'
+        DOCKER_IMAGE = "sombratasatpathy/flask-portfolio"
+        // KUBE_CONFIG = credentials('kubeconfig')  // Optional if using Kubernetes cluster
     }
 
     stages {
-        stage('Checkout') {
+
+        stage('Checkout Code') {
             steps {
                 git branch: 'main', url: 'https://github.com/AmazingMamali65/devops.git'
             }
@@ -21,7 +18,8 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    sh 'docker build -t ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${IMAGE_TAG} .'
+                    echo "🛠️ Building Docker image..."
+                    dockerImage = docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
                 }
             }
         }
@@ -29,10 +27,11 @@ pipeline {
         stage('Push to Docker Hub') {
             steps {
                 script {
-                    sh '''
-                    echo $DOCKERHUB_PASS | docker login -u $DOCKERHUB_USER --password-stdin
-                    docker push ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${IMAGE_TAG}
-                    '''
+                    echo "🚀 Pushing image to Docker Hub..."
+                    docker.withRegistry('https://index.docker.io/v1/', "${DOCKERHUB_CREDENTIALS}") {
+                        dockerImage.push("${BUILD_NUMBER}")
+                        dockerImage.push("latest")
+                    }
                 }
             }
         }
@@ -40,17 +39,11 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 script {
-                    // ✅ Update deployment image dynamically before applying
+                    echo "📦 Deploying to Kubernetes cluster..."
                     sh '''
-                    kubectl delete -f ${DEPLOYMENT_FILE} --ignore-not-found
-                    kubectl delete -f ${SERVICE_FILE} --ignore-not-found
-
-                    # Replace image name in deployment
-                    sed -i "s|image:.*|image: ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${IMAGE_TAG}|" ${DEPLOYMENT_FILE}
-
-                    kubectl apply -f ${DEPLOYMENT_FILE}
-                    kubectl apply -f ${SERVICE_FILE}
-                    kubectl rollout status deployment/flask-deployment
+                    kubectl apply -f deployment.yaml
+                    kubectl apply -f service.yaml
+                    kubectl rollout status deployment/flask-portfolio-deployment
                     '''
                 }
             }
@@ -59,13 +52,10 @@ pipeline {
 
     post {
         success {
-            echo '✅ Kubernetes Deployment successful!'
-            script {
-                sh 'kubectl get svc flask-service'
-            }
+            echo "✅ Deployment successful!"
         }
         failure {
-            echo '❌ Build or Deployment failed!'
+            echo "❌ Build or Deployment failed!"
         }
     }
 }
